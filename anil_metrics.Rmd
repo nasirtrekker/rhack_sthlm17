@@ -1,0 +1,99 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# The aim here is to create new features that measures popularity and engagement
+
+## Basic setup
+
+```{r libraries_glob_vars}
+library('tidyverse')
+library('tidytext')
+library('anytime')
+```
+
+Read data. and convert columns into correct formats.
+```{r read_data}
+df_raw <- read_csv('../data/raw/ted_main.csv')
+head(df_raw)
+```
+
+Convert columns into correct formats.
+```{r convert_columns}
+df <- df_raw %>%
+  mutate_at(funs(anydate(., tz = 'UTC')), .vars = c('film_date', 'published_date'))
+
+```
+
+
+How many views per period of time since release? The data set is until September 21st, 2017.
+
+What is the distribution of time since release?
+```{r days_since_release}
+# The data set is until September 21st, 2017.
+final_date <- as.Date('2017-09-21')
+
+df <- df %>%
+  mutate(days_since_release = final_date - published_date)
+
+ggplot(df, aes(log(as.integer(days_since_release)))) +
+  geom_density()
+
+ggplot(df, aes(as.integer(days_since_release))) +
+  geom_density()
+
+```
+
+So there were quite a few talks released close to the cutoff date of data collection.
+
+```{r filter_time_from_release}
+df_filt_release_date <- df %>%
+  filter(days_since_release > 356)
+```
+
+## Popularity
+
+```{r popularity}
+df_pop <- df_filt_release_date %>%
+  mutate(popularity = views / as.integer(days_since_release)) %>%
+  select(popularity, title)
+
+ggplot(df_pop, aes(popularity)) +
+  geom_density()
+```
+
+## By engangement
+
+We call engagement the number of comments per view. The more number of comments, then the more engaging the video is.
+
+```{r engagement}
+df_engagement <- df_filt_release_date %>%
+  mutate(engagement = comments / views ) %>%
+  select(title, engagement)
+
+df_engagement %>%
+  ggplot(aes(engagement)) +
+  geom_density()
+
+```
+
+Compare how the metrics of popularity, engagement and views stack up.
+
+```{r compare_popularity_engagement_views}
+cutoff = 20 # (top n)
+df_comparisons <- df_pop %>%
+  left_join(df_engagement, by = 'title') %>%
+  left_join(df_filt_release_date, by = 'title') %>%
+  mutate(popularity_rank = rank(-popularity)) %>%
+  mutate(views_rank = rank(-views)) %>%
+  mutate(engagement_rank = rank(-engagement)) %>% ## should be a quicker way, probably mutate_at
+  filter(views_rank <= cutoff | popularity_rank <= cutoff | engagement_rank <= cutoff) 
+
+ggplot(df_comparisons, aes(views, popularity)) +
+  geom_point()
+
+ggplot(df_comparisons, aes(views, engagement)) +
+  geom_point()
+
+```
